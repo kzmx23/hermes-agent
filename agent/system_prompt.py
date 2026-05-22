@@ -260,6 +260,26 @@ def build_system_prompt_parts(agent: Any, system_message: Optional[str] = None) 
         except Exception:
             pass
 
+    _handoff_env_path = os.getenv("HERMES_HANDOFF_PATH")
+    if _handoff_env_path:
+        try:
+            from agent.handoff import read_handoff_excerpt
+            _handoff_excerpt = read_handoff_excerpt(_handoff_env_path, max_tokens=12_000)
+            if _handoff_excerpt:
+                volatile_parts.append(
+                    "[SESSION HANDOFF LOADED]\n"
+                    f"Path: {_handoff_env_path}\n"
+                    "Treat this handoff as authoritative continuity context "
+                    "after compaction, restart, or session resume.\n\n"
+                    f"{_handoff_excerpt}"
+                )
+        except Exception:
+            volatile_parts.append(
+                "[SESSION HANDOFF AVAILABLE]\n"
+                f"Path: {_handoff_env_path}\n"
+                "If continuity is needed after compaction/restart, read this file before proceeding."
+            )
+
     from hermes_time import now as _hermes_now
     now = _hermes_now()
     # Date-only (not minute-precision) so the system prompt is byte-stable
