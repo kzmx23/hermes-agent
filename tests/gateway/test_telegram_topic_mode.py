@@ -1175,13 +1175,15 @@ def test_recover_returns_none_for_known_topic(tmp_path):
     assert runner._recover_telegram_topic_thread_id(_make_source(thread_id="222")) is None
 
 
-def test_recover_rewrites_unknown_thread_id_to_most_recent(tmp_path):
-    # Cross-topic Reply leak: inbound thread_id is a Telegram-only id we never bound.
+def test_recover_does_not_rewrite_unknown_thread_id_to_most_recent(tmp_path):
+    # All Messages creates a brand-new Telegram topic whose thread_id is not
+    # bound yet. That must become a new Hermes session, not be rewritten to the
+    # user's most-recent existing topic.
     db = SessionDB(db_path=tmp_path / "state.db")
     _seed_two_topic_bindings(db)
     runner = _make_runner(session_db=db)
 
-    assert runner._recover_telegram_topic_thread_id(_make_source(thread_id="9999")) == "222"
+    assert runner._recover_telegram_topic_thread_id(_make_source(thread_id="9999")) is None
 
 
 def test_recover_rewrites_lobby_thread_id_to_most_recent(tmp_path):
