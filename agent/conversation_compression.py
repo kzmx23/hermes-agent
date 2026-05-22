@@ -312,6 +312,36 @@ def compress_context(
         except Exception:
             pass
 
+    handoff_path = None
+    try:
+        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        _invoke_hook(
+            "pre_context_compress",
+            session_id=getattr(agent, "session_id", None),
+            platform=getattr(agent, "platform", None),
+            reason="compression",
+            approx_tokens=approx_tokens,
+            message_count=len(messages or []),
+            focus_topic=focus_topic,
+            messages=messages,
+        )
+    except Exception as _hook_err:
+        logger.debug("pre_context_compress hook failed: %s", _hook_err)
+
+    try:
+        from agent.handoff import generate_handoff
+        handoff_path = generate_handoff(
+            session_id=getattr(agent, "session_id", None),
+            messages=messages,
+            reason="compression",
+            platform=getattr(agent, "platform", None),
+            model=getattr(agent, "model", None),
+            focus_topic=focus_topic,
+        )
+        agent._last_handoff_path = str(handoff_path)
+    except Exception as _handoff_err:
+        logger.debug("compression handoff generation failed: %s", _handoff_err)
+
     try:
         compressed = agent.context_compressor.compress(messages, current_tokens=approx_tokens, focus_topic=focus_topic, force=force)
     except TypeError:
@@ -367,6 +397,16 @@ def compress_context(
     todo_snapshot = agent._todo_store.format_for_injection()
     if todo_snapshot:
         compressed.append({"role": "user", "content": todo_snapshot})
+    if handoff_path:
+        compressed.append({
+            "role": "user",
+            "content": (
+                "[HANDOFF]\n"
+                f"Previous session handoff: {handoff_path}\n"
+                "Treat this durable handoff as authoritative continuity context "
+                "after compaction/restart; read it if details are needed."
+            ),
+        })
 
     agent._invalidate_system_prompt()
     new_system_prompt = agent._build_system_prompt(system_message)
@@ -479,6 +519,19 @@ def compress_context(
         agent.session_id or "none", _pre_msg_count, len(compressed),
         f"{_compressed_est:,}",
     )
+    try:
+        from hermes_cli.plugins import invoke_hook as _invoke_hook
+        _invoke_hook(
+            "post_context_compress",
+            old_session_id=locals().get("old_session_id") or getattr(agent, "session_id", None),
+            new_session_id=getattr(agent, "session_id", None),
+            handoff_path=str(handoff_path) if handoff_path else None,
+            pre_message_count=_pre_msg_count,
+            post_message_count=len(compressed),
+            summary_error=getattr(agent.context_compressor, "_last_summary_error", None),
+        )
+    except Exception as _hook_err:
+        logger.debug("post_context_compress hook failed: %s", _hook_err)
     return compressed, new_system_prompt
 
 
