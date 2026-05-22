@@ -8049,6 +8049,8 @@ class HermesCLI:
             self._handle_fast_command(cmd_original)
         elif canonical == "compress":
             self._manual_compress(cmd_original)
+        elif canonical in ("handoff-session", "handoff-snap"):
+            self._manual_handoff_session(cmd_original)
         elif canonical == "usage":
             self._show_usage()
         elif canonical == "insights":
@@ -9386,6 +9388,53 @@ class HermesCLI:
 
             except Exception as e:
                 print(f"  ❌ Compression failed: {e}")
+
+    def _manual_handoff_session(self, cmd_original: str = ""):
+        """Write a durable session handoff file without compressing context.
+
+        Accepts an optional focus topic: ``/handoff-session <focus>``.
+        Produces handoff-<session_id>.md with goals, decisions, next steps,
+        and a transcript excerpt for continuity after compaction or restart.
+        """
+        if not self.agent:
+            print("(._.) No active agent -- send a message first.")
+            return
+
+        focus_topic = ""
+        if cmd_original:
+            parts = cmd_original.strip().split(None, 1)
+            if len(parts) > 1:
+                focus_topic = parts[1].strip()
+
+        try:
+            from agent.handoff import generate_handoff
+            from agent.model_metadata import estimate_request_tokens_rough
+
+            history = list(self.conversation_history) if self.conversation_history else []
+            msg_count = len(history)
+            _sys_prompt = getattr(self.agent, "_cached_system_prompt", "") or ""
+            _tools = getattr(self.agent, "tools", None) or None
+            approx_tokens = estimate_request_tokens_rough(
+                history, system_prompt=_sys_prompt, tools=_tools,
+            ) if history else 0
+
+            handoff_path = generate_handoff(
+                session_id=getattr(self.agent, "session_id", None) or self.session_id,
+                messages=history,
+                reason="manual_handoff",
+                platform="cli",
+                model=getattr(self.agent, "model", None),
+                focus_topic=focus_topic or None,
+                llm_summarize=True,
+                session_name=getattr(self, 'session_name', None),
+            )
+            print(f"  📋 Handoff saved: {handoff_path} (LLM handoff)")
+            print(f"     Messages: {msg_count}, ~{approx_tokens:,} tokens")
+            print(f"     Source: Terminal")
+            if focus_topic:
+                print(f"     Focus: {focus_topic}")
+        except Exception as e:
+            print(f"  ❌ Handoff failed: {e}")
 
     def _handle_debug_command(self):
         """Handle /debug — upload debug report + logs and print paste URLs."""

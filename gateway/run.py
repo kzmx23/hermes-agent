@@ -7253,6 +7253,9 @@ class GatewayRunner:
         if canonical == "compress":
             return await self._handle_compress_command(event)
 
+        if canonical in ("handoff-session", "handoff-snap"):
+            return await self._handle_handoff_session_command(event)
+
         if canonical == "usage":
             return await self._handle_usage_command(event)
 
@@ -11994,6 +11997,64 @@ class GatewayRunner:
         except Exception as e:
             logger.warning("Manual compress failed: %s", e)
             return t("gateway.compress.failed", error=e)
+
+    async def _handle_handoff_session_command(self, event: MessageEvent) -> str:
+        """Handle /handoff-session command -- write durable session handoff.
+
+        Accepts an optional focus topic: ``/handoff-session <focus>``.
+        Uses LLM summarization via the auxiliary compression model.
+        """
+        source = event.source
+        session_entry = self.session_store.get_or_create_session(source)
+        history = self.session_store.load_transcript(session_entry.session_id)
+        focus_topic = (event.get_command_args() or "").strip() or None
+
+        try:
+            from agent.handoff import generate_handoff
+            from agent.model_metadata import estimate_request_tokens_rough
+
+            msgs = [
+                {"role": m.get("role"), "content": m.get("content")}
+                for m in history
+                if m.get("role") in {"user", "assistant"} and m.get("content")
+            ]
+
+            session_key = self._session_key_for_source(source)
+            model, runtime_kwargs = self._resolve_session_agent_runtime(
+                source=source,
+                session_key=session_key,
+            )
+
+            loop = asyncio.get_running_loop()
+            handoff_path = await loop.run_in_executor(
+                None,
+                lambda: generate_handoff(
+                    session_id=session_entry.session_id,
+                    messages=msgs,
+                    reason="manual_handoff",
+                    platform=str(source.platform) if source.platform else None,
+                    model=model,
+                    focus_topic=focus_topic,
+                    llm_summarize=True,
+                    session_name=getattr(session_entry, "session_name", None),
+                    gateway_name=getattr(self, "gateway_name", None),
+                    main_runtime=runtime_kwargs if runtime_kwargs.get("api_key") else None,
+                ),
+            )
+
+            approx_tokens = estimate_request_tokens_rough(msgs) if msgs else 0
+            lines = [
+                f"📋 Handoff saved (LLM)",
+                f"   Messages: {len(msgs)}, ~{approx_tokens:,} tokens",
+                f"   Source: Gateway ({source.platform})",
+            ]
+            if focus_topic:
+                lines.append(f"   Focus: {focus_topic}")
+            lines.append(f"   Path: {handoff_path}")
+            return "\n".join(lines)
+        except Exception as e:
+            logger.warning("Handoff session failed: %s", e)
+            return f"❌ Handoff failed: {e}"
 
     async def _get_telegram_topic_capabilities(self, source: SessionSource) -> dict:
         """Read Telegram private-topic capability flags via Bot API getMe."""
