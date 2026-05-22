@@ -20,6 +20,61 @@ def compressor():
         return c
 
 
+class TestTailBudgetClamps:
+    def test_tail_budget_clamped_to_max_for_large_context(self):
+        with patch("agent.context_compressor.get_model_context_length", return_value=1_000_000):
+            c = ContextCompressor(
+                model="test/large",
+                threshold_percent=0.90,
+                summary_target_ratio=0.40,
+                tail_max_tokens=30_000,
+                quiet_mode=True,
+            )
+        assert c.threshold_tokens == 900_000
+        # raw = 900_000 * 0.40 = 360_000, clamped to 30_000
+        assert c.tail_token_budget == 30_000
+
+    def test_tail_budget_clamped_to_min_for_tiny_ratio(self):
+        with patch("agent.context_compressor.get_model_context_length", return_value=100_000):
+            c = ContextCompressor(
+                model="test/small",
+                threshold_percent=0.50,
+                summary_target_ratio=0.10,
+                tail_min_tokens=8_000,
+                quiet_mode=True,
+            )
+        # threshold_tokens = max(100_000 * 0.50, MINIMUM_CONTEXT_LENGTH)
+        # raw = threshold_tokens * 0.10, should be clamped up to 8_000
+        assert c.tail_token_budget == 8_000
+
+    def test_update_model_reapplies_tail_clamps(self):
+        with patch("agent.context_compressor.get_model_context_length", return_value=100_000):
+            c = ContextCompressor(
+                model="test/model",
+                threshold_percent=0.50,
+                summary_target_ratio=0.40,
+                tail_max_tokens=20_000,
+                quiet_mode=True,
+            )
+        # After switch to 1M context, clamp should still apply
+        c.update_model("test/large", context_length=1_000_000)
+        assert c.threshold_tokens == 500_000
+        # raw = 500_000 * 0.40 = 200_000, clamped to 20_000
+        assert c.tail_token_budget == 20_000
+
+    def test_no_clamp_when_params_absent(self):
+        """Without tail_min/tail_max, budget is pure ratio (backward compat)."""
+        with patch("agent.context_compressor.get_model_context_length", return_value=200_000):
+            c = ContextCompressor(
+                model="test/plain",
+                threshold_percent=0.78,
+                summary_target_ratio=0.15,
+                quiet_mode=True,
+            )
+        expected = int(c.threshold_tokens * 0.15)
+        assert c.tail_token_budget == expected
+
+
 class TestShouldCompress:
     def test_below_threshold(self, compressor):
         compressor.last_prompt_tokens = 50000

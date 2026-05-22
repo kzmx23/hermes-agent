@@ -481,6 +481,25 @@ class ContextCompressor(ContextEngine):
         self._ineffective_compression_count = 0
         self._summary_failure_cooldown_until = 0.0  # transient errors must not block a fresh session
 
+    @staticmethod
+    def _normalize_optional_token_limit(value: int | None) -> int | None:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
+
+    def _compute_tail_token_budget(self) -> int:
+        """Return live-tail budget after applying optional absolute clamps."""
+        budget = int(self.threshold_tokens * self.summary_target_ratio)
+        if self.tail_min_tokens is not None:
+            budget = max(budget, self.tail_min_tokens)
+        if self.tail_max_tokens is not None:
+            budget = min(budget, self.tail_max_tokens)
+        return max(1, budget)
+
     def update_model(
         self,
         model: str,
@@ -503,8 +522,7 @@ class ContextCompressor(ContextEngine):
         )
         # Recalculate token budgets for the new context length so the
         # compressor stays calibrated after a model switch (e.g. 200K → 32K).
-        target_tokens = int(self.threshold_tokens * self.summary_target_ratio)
-        self.tail_token_budget = target_tokens
+        self.tail_token_budget = self._compute_tail_token_budget()
         self.max_summary_tokens = min(
             int(context_length * 0.05), _SUMMARY_TOKENS_CEILING,
         )
@@ -524,6 +542,8 @@ class ContextCompressor(ContextEngine):
         provider: str = "",
         api_mode: str = "",
         abort_on_summary_failure: bool = False,
+        tail_min_tokens: int | None = None,
+        tail_max_tokens: int | None = None,
     ):
         self.model = model
         self.base_url = base_url
@@ -534,6 +554,8 @@ class ContextCompressor(ContextEngine):
         self.protect_first_n = protect_first_n
         self.protect_last_n = protect_last_n
         self.summary_target_ratio = max(0.10, min(summary_target_ratio, 0.80))
+        self.tail_min_tokens = self._normalize_optional_token_limit(tail_min_tokens)
+        self.tail_max_tokens = self._normalize_optional_token_limit(tail_max_tokens)
         self.quiet_mode = quiet_mode
         # When True, summary-generation failure aborts compression entirely
         # (returns messages unchanged, sets _last_compress_aborted=True).
@@ -557,8 +579,7 @@ class ContextCompressor(ContextEngine):
         self.compression_count = 0
 
         # Derive token budgets: ratio is relative to the threshold, not total context
-        target_tokens = int(self.threshold_tokens * self.summary_target_ratio)
-        self.tail_token_budget = target_tokens
+        self.tail_token_budget = self._compute_tail_token_budget()
         self.max_summary_tokens = min(
             int(self.context_length * 0.05), _SUMMARY_TOKENS_CEILING,
         )

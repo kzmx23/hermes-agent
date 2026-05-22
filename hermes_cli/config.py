@@ -793,10 +793,12 @@ DEFAULT_CONFIG = {
 
     "compression": {
         "enabled": True,
-        "threshold": 0.50,            # compress when context usage exceeds this ratio
-        "target_ratio": 0.20,         # fraction of threshold to preserve as recent tail
-        "protect_last_n": 20,         # minimum recent messages to keep uncompressed
-        "hygiene_hard_message_limit": 400,  # gateway session-hygiene force-compress threshold by message count
+        "threshold": 0.78,            # compress before high-context quality degradation
+        "target_ratio": 0.15,         # fraction of threshold to preserve as recent tail
+        "tail_min_tokens": 8000,      # optional absolute lower clamp for live tail
+        "tail_max_tokens": 30000,     # optional absolute upper clamp for live tail
+        "protect_last_n": 6,          # minimum recent messages to keep uncompressed
+        "hygiene_hard_message_limit": 300,  # gateway session-hygiene force-compress threshold by message count
         "protect_first_n": 3,         # non-system head messages always preserved
                                       # verbatim, in ADDITION to the system prompt
                                       # (which is always implicitly protected). Set to

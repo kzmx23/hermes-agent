@@ -1194,6 +1194,11 @@ def init_agent(
     compression_enabled = str(_compression_cfg.get("enabled", True)).lower() in {"true", "1", "yes"}
     compression_target_ratio = float(_compression_cfg.get("target_ratio", 0.20))
     compression_protect_last = int(_compression_cfg.get("protect_last_n", 20))
+    # Optional absolute tail clamps for large-context models
+    _tail_min_raw = _compression_cfg.get("tail_min_tokens")
+    _tail_max_raw = _compression_cfg.get("tail_max_tokens")
+    compression_tail_min = int(_tail_min_raw) if _tail_min_raw is not None else None
+    compression_tail_max = int(_tail_max_raw) if _tail_max_raw is not None else None
     # protect_first_n is the number of non-system messages to protect at
     # the head, in addition to the system prompt (which is always
     # implicitly protected by the compressor).  Floor at 0 — a value of
@@ -1422,6 +1427,8 @@ def init_agent(
             provider=agent.provider,
             api_mode=agent.api_mode,
             abort_on_summary_failure=compression_abort_on_summary_failure,
+            tail_min_tokens=compression_tail_min,
+            tail_max_tokens=compression_tail_max,
         )
     agent.compression_enabled = compression_enabled
 
