@@ -6206,6 +6206,38 @@ def _clear_bytecode_cache(root: Path) -> int:
     return removed
 
 
+def _run_local_post_update_hooks(root: Path) -> None:
+    """Run user-local post-update hooks after upstream code has been pulled.
+
+    Hooks live outside the Hermes Agent git checkout so `hermes update` cannot
+    delete them when it resets the repository back to origin/main. This is only
+    for this user's local install; upstream installs without the directory are
+    unaffected.
+    """
+    hook_dir = Path(os.path.expanduser("~/.hermes/local-patches/hermes-agent/post-update.d"))
+    if not hook_dir.is_dir():
+        return
+    hooks = sorted(p for p in hook_dir.iterdir() if p.is_file() and os.access(p, os.X_OK))
+    if not hooks:
+        return
+    print("→ Running local post-update hooks...")
+    for hook in hooks:
+        result = subprocess.run(
+            [str(hook), str(root)],
+            cwd=root,
+            capture_output=True,
+            text=True,
+        )
+        name = hook.name
+        if result.returncode == 0:
+            summary = (result.stdout or "").strip().splitlines()[-1:] or ["ok"]
+            print(f"  ✓ {name}: {summary[0]}")
+        else:
+            print(f"  ⚠ {name}: failed with exit {result.returncode}")
+            if result.stderr.strip():
+                print(f"    {result.stderr.strip().splitlines()[0]}")
+
+
 # Critical files that every ``hermes`` invocation imports at startup. If any
 # of these fail to parse after a pull, the CLI is bricked — the user can't
 # even run ``hermes update`` again to roll forward. The post-pull syntax
@@ -8843,6 +8875,14 @@ def _cmd_update_impl(args, gateway_mode: bool):
             print(
                 f"  ✓ Cleared {removed} stale __pycache__ director{'y' if removed == 1 else 'ies'}"
             )
+
+        # Re-apply user-local patches after `git pull`/reset. This hook runner
+        # executes from the pre-update Python process, so it still runs even if
+        # the just-pulled source tree no longer contains this local hook code.
+        try:
+            _run_local_post_update_hooks(PROJECT_ROOT)
+        except Exception as e:
+            logger.debug("Local post-update hooks failed: %s", e)
 
         # Fork upstream sync logic (only for main branch on forks)
         if is_fork and branch == "main":
