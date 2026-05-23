@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 import httpx
 
@@ -305,6 +306,30 @@ def _fetch_openrouter_account_usage(base_url: Optional[str], api_key: Optional[s
     )
 
 
+def _fetch_openai_account_usage(provider: str = "openai") -> AccountUsageSnapshot:
+    return AccountUsageSnapshot(
+        provider=provider,
+        source="standard_inference_api",
+        fetched_at=_utc_now(),
+        title="OpenAI API limits",
+        details=(
+            "Short-window request/token limits are shown from x-ratelimit headers after an API call.",
+        ),
+        unavailable_reason=(
+            "OpenAI does not expose account day/week/month token budgets via the standard inference API key. "
+            "Use provider headers for live RPM/TPM remaining; day/week/month account quotas require separate admin/billing APIs."
+        ),
+    )
+
+
+def _is_openai_base_url(base_url: Optional[str]) -> bool:
+    try:
+        host = urlparse(str(base_url or "")).netloc.lower()
+    except Exception:
+        return False
+    return host == "api.openai.com" or host.endswith(".api.openai.com")
+
+
 def fetch_account_usage(
     provider: Optional[str],
     *,
@@ -312,11 +337,15 @@ def fetch_account_usage(
     api_key: Optional[str] = None,
 ) -> Optional[AccountUsageSnapshot]:
     normalized = str(provider or "").strip().lower()
-    if normalized in {"", "auto", "custom"}:
+    if normalized in {"", "auto"}:
+        return None
+    if normalized == "custom" and not _is_openai_base_url(base_url):
         return None
     try:
         if normalized == "openai-codex":
             return _fetch_codex_account_usage()
+        if normalized == "openai" or (normalized == "custom" and _is_openai_base_url(base_url)):
+            return _fetch_openai_account_usage("openai" if normalized == "custom" else normalized)
         if normalized == "anthropic":
             return _fetch_anthropic_account_usage()
         if normalized == "openrouter":

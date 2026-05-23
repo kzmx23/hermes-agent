@@ -12665,7 +12665,9 @@ class GatewayRunner:
             try:
                 user_source = source.platform.value if source.platform else None
                 sessions = self._session_db.list_sessions_rich(
-                    source=user_source, limit=10
+                    source=user_source,
+                    limit=10,
+                    order_by_last_active=True,
                 )
                 titled = [s for s in sessions if s.get("title")]
                 if not titled:
@@ -14401,10 +14403,7 @@ class GatewayRunner:
                 result = await asyncio.to_thread(transcribe_audio, path)
                 if result["success"]:
                     transcript = result["transcript"]
-                    enriched_parts.append(
-                        f'[The user sent a voice message~ '
-                        f'Here\'s what they said: "{transcript}"]'
-                    )
+                    enriched_parts.append(f"🎤 [Voice] {transcript}")
                 else:
                     error = result.get("error", "unknown error")
                     if (

@@ -3660,7 +3660,7 @@ def resolve_provider_client(
         return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
                 else (client, final_model))
 
-    elif pconfig.auth_type in {"oauth_device_code", "oauth_external"}:
+    elif pconfig.auth_type in {"oauth_device_code", "oauth_external", "oauth_minimax"}:
         # OAuth providers — route through their specific try functions
         if provider == "nous":
             return resolve_provider_client("nous", model, async_mode)
@@ -3668,6 +3668,32 @@ def resolve_provider_client(
             return resolve_provider_client("openai-codex", model, async_mode)
         if provider == "xai-oauth":
             return resolve_provider_client("xai-oauth", model, async_mode)
+        if provider == "minimax-oauth":
+            try:
+                from hermes_cli.auth import resolve_minimax_oauth_runtime_credentials
+                creds = resolve_minimax_oauth_runtime_credentials()
+                api_key = str(creds.get("api_key", "")).strip()
+                raw_base_url = str(creds.get("base_url", "")).strip().rstrip("/") or pconfig.inference_base_url
+                if not api_key:
+                    logger.warning("resolve_provider_client: minimax-oauth has no OAuth token")
+                    return None, None
+                base_url = _to_openai_base_url(raw_base_url)
+                default_model = _get_aux_model_for_provider(provider)
+                final_model = _normalize_resolved_model(model or default_model, provider)
+                if not final_model:
+                    logger.warning("resolve_provider_client: minimax-oauth has no auxiliary model")
+                    return None, None
+                client = OpenAI(api_key=api_key, base_url=base_url)
+                # Critical: pass raw_base_url (/anthropic) to the wrapper so
+                # it detects Anthropic Messages transport. The SDK client still
+                # uses the converted /v1 base URL.
+                client = _maybe_wrap_anthropic(client, final_model, api_key, raw_base_url)
+                logger.debug("resolve_provider_client: %s (%s)", provider, final_model)
+                return (_to_async_client(client, final_model, is_vision=is_vision) if async_mode
+                        else (client, final_model))
+            except Exception as exc:
+                logger.debug("resolve_provider_client: minimax-oauth failed: %s", exc)
+                return None, None
         # Other OAuth providers not directly supported
         logger.warning("resolve_provider_client: OAuth provider %s not "
                        "directly supported, try 'auto'", provider)

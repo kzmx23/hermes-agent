@@ -22,6 +22,7 @@ Header schema (12 headers total):
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional
@@ -89,6 +90,38 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _parse_reset_seconds(value: Any, default: float = 0.0) -> float:
+    """Parse provider reset headers.
+
+    OpenAI commonly returns duration strings such as ``1s``, ``500ms``,
+    ``6m0s`` or ``1h2m3s`` instead of plain numeric seconds.
+    """
+    if value in {None, ""}:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip().lower()
+    if not text:
+        return default
+    total = 0.0
+    matched = False
+    for match in re.finditer(r"(\d+(?:\.\d+)?)(ms|s|m|h)", text):
+        matched = True
+        amount = float(match.group(1))
+        unit = match.group(2)
+        if unit == "ms":
+            total += amount / 1000.0
+        elif unit == "s":
+            total += amount
+        elif unit == "m":
+            total += amount * 60.0
+        elif unit == "h":
+            total += amount * 3600.0
+    return total if matched else default
+
+
 def parse_rate_limit_headers(
     headers: Mapping[str, str],
     provider: str = "",
@@ -115,7 +148,7 @@ def parse_rate_limit_headers(
         return RateLimitBucket(
             limit=_safe_int(lowered.get(f"x-ratelimit-limit-{tag}")),
             remaining=_safe_int(lowered.get(f"x-ratelimit-remaining-{tag}")),
-            reset_seconds=_safe_float(lowered.get(f"x-ratelimit-reset-{tag}")),
+            reset_seconds=_parse_reset_seconds(lowered.get(f"x-ratelimit-reset-{tag}")),
             captured_at=now,
         )
 

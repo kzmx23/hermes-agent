@@ -38,6 +38,7 @@ def _clean_env(monkeypatch):
         "OPENROUTER_API_KEY", "OPENAI_BASE_URL", "OPENAI_API_KEY",
         "OPENAI_MODEL", "LLM_MODEL", "NOUS_INFERENCE_BASE_URL",
         "ANTHROPIC_API_KEY", "ANTHROPIC_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
+        "MINIMAX_API_KEY", "MINIMAX_BASE_URL",
     ):
         monkeypatch.delenv(key, raising=False)
     # Module-level unhealthy cache (10-min TTL) leaks between tests;
@@ -3026,3 +3027,29 @@ class TestAuxUnhealthyCache:
             )
             # After the 402, OpenRouter is in the unhealthy cache.
             assert _is_provider_unhealthy("openrouter") is True
+
+class TestMiniMaxOAuthAuxiliary:
+    def test_minimax_oauth_uses_original_anthropic_url_for_wrap_detection(self):
+        fake_client = MagicMock(name="openai-client")
+        wrapped_client = MagicMock(name="wrapped-client")
+
+        with patch(
+            "hermes_cli.auth.resolve_minimax_oauth_runtime_credentials",
+            return_value={
+                "provider": "minimax-oauth",
+                "api_key": "oauth-token",
+                "base_url": "https://api.minimax.io/anthropic",
+                "source": "oauth",
+            },
+        ), patch("agent.auxiliary_client.OpenAI", return_value=fake_client) as mock_openai, patch(
+            "agent.auxiliary_client._maybe_wrap_anthropic", return_value=wrapped_client
+        ) as mock_wrap:
+            client, model = resolve_provider_client("minimax-oauth")
+
+        assert client is wrapped_client
+        assert model == "MiniMax-M2.7-highspeed"
+        mock_openai.assert_called_once()
+        assert str(mock_openai.call_args.kwargs["base_url"]) == "https://api.minimax.io/v1"
+        mock_wrap.assert_called_once()
+        # Critical regression: pass the original /anthropic URL, not the SDK /v1 URL.
+        assert mock_wrap.call_args.args[3] == "https://api.minimax.io/anthropic"

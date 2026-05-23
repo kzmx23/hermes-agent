@@ -1733,10 +1733,31 @@ def list_authenticated_providers(
             seen_slugs.add(slug.lower())
             _section4_emitted_slugs.add(slug.lower())
 
+    results = _filter_to_canonical_providers(results)
+
     # Sort: current provider first, then by model count descending
     results.sort(key=lambda r: (not r["is_current"], -r["total_models"]))
 
     return results
+
+
+def _filter_to_canonical_providers(results: List[dict]) -> List[dict]:
+    """Keep visible provider rows aligned with CANONICAL_PROVIDERS.
+
+    User-defined providers from config.yaml are preserved so Maxim's custom
+    endpoints like cliproxy/neuraldeep remain visible.
+    """
+    try:
+        from hermes_cli.models import CANONICAL_PROVIDERS as _canon_provs
+        allowed = {p.slug.lower() for p in _canon_provs}
+        allowed.add("custom")
+        return [
+            r for r in results
+            if r.get("is_user_defined")
+            or str(r.get("slug", "")).lower() in allowed
+        ]
+    except Exception:
+        return results
 
 
 def list_picker_providers(

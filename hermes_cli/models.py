@@ -978,6 +978,22 @@ try:
 except Exception:
     pass
 
+# Maxim local fork: keep CLI/gateway provider pickers focused on active providers.
+# Custom named providers (e.g. cliproxy, neuraldeep) are added from config.yaml
+# through model_switch as user-defined rows, not through CANONICAL_PROVIDERS.
+_MX_ACTIVE_PROVIDER_SLUGS = {
+    "zai",
+    "openai-codex",
+    "gemini",
+    "kimi-coding",
+    "minimax",
+    "deepseek",
+}
+CANONICAL_PROVIDERS = [
+    p for p in CANONICAL_PROVIDERS
+    if p.slug in _MX_ACTIVE_PROVIDER_SLUGS
+]
+
 # Derived dicts — used throughout the codebase
 _PROVIDER_LABELS = {p.slug: p.label for p in CANONICAL_PROVIDERS}
 _PROVIDER_LABELS["custom"] = "Custom endpoint"  # special case: not a named provider

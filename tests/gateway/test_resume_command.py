@@ -91,6 +91,25 @@ class TestHandleResumeCommand:
         db.close()
 
     @pytest.mark.asyncio
+    async def test_list_named_sessions_orders_by_last_activity(self):
+        """Gateway /resume list should ask SessionDB for newest-last-message ordering."""
+        db = MagicMock()
+        db.list_sessions_rich.return_value = [
+            {"title": "Recent", "preview": "latest work"},
+        ]
+
+        event = _make_event(text="/resume")
+        runner = _make_runner(session_db=db, event=event)
+        result = await runner._handle_resume_command(event)
+
+        assert "Recent" in result
+        db.list_sessions_rich.assert_called_once_with(
+            source="telegram",
+            limit=10,
+            order_by_last_active=True,
+        )
+
+    @pytest.mark.asyncio
     async def test_list_shows_usage_when_no_titled(self, tmp_path):
         """With no arg and no titled sessions, shows instructions."""
         from hermes_state import SessionDB

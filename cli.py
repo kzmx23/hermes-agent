@@ -9505,9 +9505,9 @@ class HermesCLI:
         agent = self.agent
         calls = agent.session_api_calls
 
-        if calls == 0:
-            print("(._.) No API calls made yet in this session.")
-            return
+        no_calls_yet = calls == 0
+        if no_calls_yet:
+            print("(._.) No API calls made yet in this session; showing configured/provider limits where available.")
 
         # ── Rate limits (shown first when available) ────────────────
         rl_state = agent.get_rate_limit_state()

@@ -122,3 +122,92 @@
 3. **Оптимизация сжатия контекста:** Коммит 3 — ограничение tail-бюджета для больших контекстных окон.
 4. **Модуль session handoff (ядро):** Коммиты 4–6 — создание, запись при сжатии, инъекция в системный промпт.
 5. **Управление handoff (CLI/gateway):** Коммиты 7–8 — ручная команда, автоматический handoff при остановке шлюза.
+
+---
+
+## Сессия: 23 мая 2026 г. — UX/Provider/Limit fixes
+
+**Дата:** 2026-05-23 02:47 CDT  
+**Модель:** OpenAI Codex / gpt-5.5  
+**Цель:** перенести ранее отложенные локальные фиксы, убрать мусорные провайдеры из gateway/CLI picker, исправить `/resume`, добавить `/limit` как честный alias/report по usage/limits.
+
+### Изменённые файлы
+
+- `gateway/run.py`
+  - `/resume` теперь сортирует список сессий по последней активности (`order_by_last_active=True`).
+  - STT transcript теперь сохраняется в компактном формате `🎤 [Voice] ...`.
+
+- `hermes_cli/models.py`
+  - Добавлен allowlist активных built-in providers для видимого каталога:
+    - `zai`
+    - `openai-codex`
+    - `gemini`
+    - `kimi-coding`
+    - `minimax`
+    - `deepseek`
+  - Цель: убрать мусорные/неиспользуемые providers из CLI/gateway picker.
+
+- `hermes_cli/model_switch.py`
+  - Добавлен фильтр `_filter_to_canonical_providers()`.
+  - Built-in rows фильтруются по `CANONICAL_PROVIDERS`, но user-defined providers сохраняются (`cliproxy`, `neuraldeep`).
+
+- `agent/auxiliary_client.py`
+  - Исправлена поддержка `minimax-oauth` для auxiliary/title/compression.
+  - OpenAI SDK использует converted `/v1` URL, а Anthropic wrapper получает оригинальный `/anthropic` URL для корректного transport detection.
+
+- `hermes_cli/browser_connect.py`
+  - Добавлен Chrome flag `--no-sandbox` для debug browser launch.
+
+- `hermes_cli/commands.py`
+  - `/limit` добавлен как alias команды `/usage`.
+
+- `agent/rate_limit_tracker.py`
+  - Добавлен parser OpenAI-compatible reset duration strings: `1s`, `500ms`, `6m0s`, `1h2m3s`.
+
+- `agent/account_usage.py`
+  - Добавлен OpenAI account usage snapshot/caveat.
+  - Честно указывается, что standard OpenAI inference API не раскрывает day/week/month token budgets; live RPM/TPM показываются через headers после API call.
+
+- `cli.py`
+  - `/usage` больше не делает ранний return при `session_api_calls == 0`; provider/account limits теперь можно показать до первого API call.
+
+### Новые/изменённые тесты
+
+- `tests/gateway/test_resume_command.py`
+  - Regression для сортировки `/resume` по last activity.
+
+- `tests/hermes_cli/test_provider_filtering.py`
+  - Проверяет visible provider allowlist и сохранение custom providers.
+
+- `tests/agent/test_auxiliary_client.py`
+  - Regression для MiniMax OAuth auxiliary wrapping.
+
+- `tests/hermes_cli/test_browser_connect.py`
+  - Проверяет наличие `--no-sandbox`.
+
+- `tests/gateway/test_voice_transcription_enrichment.py`
+  - Проверяет формат `🎤 [Voice] ...`.
+
+- `tests/hermes_cli/test_usage_limit_command.py`
+  - Проверяет `/limit` alias → `usage`.
+
+- `tests/agent/test_rate_limit_tracker_openai.py`
+  - Проверяет OpenAI reset duration parsing.
+
+- `tests/agent/test_account_usage_openai.py`
+  - Проверяет OpenAI account caveat.
+
+### Документы
+
+- `mx_hermes_changes/mx_limit_command_research.md`
+  - Исследование `/limit`: что доступно точно, что недоступно через standard OpenAI inference API, и план следующего этапа для local Hermes day/week/month usage totals.
+
+### Суть и цель изменений
+
+1. Убрать мусорные providers из `/model` в gateway и terminal.
+2. Исправить `/resume`, чтобы самые свежие по последнему сообщению сессии были сверху.
+3. Перенести MiniMax OAuth auxiliary fix, чтобы title/compression/handoff не ломались на 401 из-за неверного transport.
+4. Добавить browser `--no-sandbox`, чтобы Chrome debug launch работал на системах с restricted sandbox/user namespaces.
+5. Сделать voice transcripts явно отличимыми от текстовых сообщений.
+6. Добавить `/limit` и честно показать ограничения OpenAI: live short-window через headers, а day/week/month budgets — недоступны через standard inference API.
+
