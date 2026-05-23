@@ -2,6 +2,35 @@
 
 ---
 
+## Сессия: 23 мая 2026 г. (вечер) — namespaced plugin ids
+
+**Контекст:** Дашборд `hrmdash.local.ioprojects.ru` (за Traefik) при попытке включить плагин `image_gen/openai` отдавал в консоли `405 Method Not Allowed`. Причина не в reverse-proxy и не в авторизации, а в самом hermes: fronted шлёт URL-encoded плагин-id (`image_gen%2Fopenai`), uvicorn декодирует `%2F` → `/`, после чего путь `/api/dashboard/agent-plugins/image_gen/openai/enable` больше не матчится шаблону `{name}/enable` (path-параметр `{name}` берёт один сегмент) и попадает в роут статики `/dashboard-plugins/{name}/{file_path:path}` — там есть только GET, отсюда 405. Та же ошибка воспроизводилась бы и на `http://localhost:9119`.
+
+### Коммиты
+
+#### 1. `53534180e` — fix(web): allow namespaced plugin ids (image_gen/openai) on dashboard routes
+
+**Изменённые файлы:**
+- `hermes_cli/web_server.py` — пять plugin-admin роутов переведены на `{name:path}`; `_validate_plugin_name` разрешает встроенные слэши, но по-прежнему блокирует `..`, `\\`, абсолютные пути, ведущий/завершающий `/` и `//`.
+- `tests/hermes_cli/test_plugin_name_namespace.py` — **новый файл**, 12 параметризованных тестов: 4 принимаемых имени (`image_gen`, `image_gen/openai`, `vendor/family/specific`, `a-b_c.1`) и 8 отвергаемых (`""`, `..`, `../etc/passwd`, `image_gen/../escape`, `back\\slash`, `/abs/path`, `trailing/`, `double//slash`).
+
+**Затронутые роуты:**
+- `POST /api/dashboard/agent-plugins/{name:path}/enable`
+- `POST /api/dashboard/agent-plugins/{name:path}/disable`
+- `POST /api/dashboard/agent-plugins/{name:path}/update`
+- `DELETE /api/dashboard/agent-plugins/{name:path}`
+- `POST /api/dashboard/plugins/{name:path}/visibility`
+
+**Назначение:** убрать 405 при включении/выключении плагинов с namespaced id. `serve_plugin_asset` (`/dashboard-plugins/{plugin_name}/{file_path:path}`) сознательно НЕ трогался — там `{plugin_name:path}` ломает разбор пути; статика плагина с namespaced id — отдельная задача.
+
+**Проверка:** `POST .../agent-plugins/image_gen%2Fopenai/enable` без авторизации возвращал 405, теперь возвращает 401 (роут найден, метод разрешён). С браузерной сессией включение должно проходить.
+
+**Pytest:** `tests/hermes_cli/test_plugin_name_namespace.py` — 12 passed.
+
+**Деплой:** `systemctl --user restart hermes-dashboard.service`, статус `active`, `:9119` слушается, Traefik отдаёт 200 на `hrmdash.local.ioprojects.ru`.
+
+---
+
 ## Сессия: 23 мая 2026 г.
 
 **Контекст:** Рабочая сессия по развитию форка Hermes Agent. Восемь коммитов в `origin/main` поверх `upstream/main`. Форк: `origin=https://github.com/kzmx23/hermes-agent.git`, `upstream=https://github.com/NousResearch/hermes-agent.git`. Шлюз перезапущен с PID 2705847.
