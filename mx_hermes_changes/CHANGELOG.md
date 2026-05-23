@@ -258,3 +258,27 @@
 - `tests/hermes_cli/test_rename_command.py`
   - Проверяет корректное разрешение команды `rename` и `/rename` в canonical `title`.
 
+---
+
+## Сессия: 23 мая 2026 г. — Fix CLI/TUI Session Sorting
+
+**Дата:** 2026-05-23 03:30 CDT  
+**Модель:** gemini-3.5-flash via Google  
+**Цель:** Исправить сортировку списка последних сессий в CLI/TUI. Ранее из-за отсутствия флага `order_by_last_active=True` сессии сортировались по `started_at DESC`. Это ломало порядок для сжатых/продолженных сессий, у которых оригинальный root начался в прошлом, прижимая их к старым датам даже при наличии недавней активности.
+
+### Изменённые файлы
+
+- `cli.py`
+  - `_list_recent_sessions()` теперь явно передаёт `order_by_last_active=True` в `list_sessions_rich()`.
+
+- `hermes_cli/main.py`
+  - Команда `sessions list` теперь использует `order_by_last_active=True` для сортировки списка по последней активности.
+
+- `tui_gateway/server.py`
+  - Запрос TUI `session.list` теперь возвращает список, отсортированный по последней активности (`order_by_last_active=True`).
+
+### Новые/изменённые тесты
+
+- `tests/cli/test_cli_recent_sessions_sorting.py`
+  - Проверяет, что `_list_recent_sessions()` вызывает `list_sessions_rich` с флагом `order_by_last_active=True`.
+

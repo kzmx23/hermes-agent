@@ -2312,7 +2312,11 @@ def _(rid, params: dict) -> dict:
         fetch_limit = max(limit * 2, 200)
         rows = [
             s
-            for s in db.list_sessions_rich(source=None, limit=fetch_limit)
+            for s in db.list_sessions_rich(
+                source=None,
+                limit=fetch_limit,
+                order_by_last_active=True,
+            )
             if (s.get("source") or "").strip().lower() not in deny
         ][:limit]
         return _ok(
