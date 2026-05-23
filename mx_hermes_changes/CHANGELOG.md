@@ -211,3 +211,21 @@
 5. Сделать voice transcripts явно отличимыми от текстовых сообщений.
 6. Добавить `/limit` и честно показать ограничения OpenAI: live short-window через headers, а day/week/month budgets — недоступны через standard inference API.
 
+---
+
+## Сессия: 23 мая 2026 г. — /rename alias
+
+**Дата:** 2026-05-23 03:00 CDT  
+**Модель:** gemini-3.5-flash via Google  
+**Цель:** Добавить `/rename` как alias для команды `/title` (переименование текущей сессии), поскольку пользователь привык к `/rename`.
+
+### Изменённые файлы
+
+- `hermes_cli/commands.py`
+  - Добавлен `aliases=("rename",)` для `CommandDef("title")`.
+
+### Новые/изменённые тесты
+
+- `tests/hermes_cli/test_rename_command.py`
+  - Проверяет корректное разрешение команды `rename` и `/rename` в canonical `title`.
+
