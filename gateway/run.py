@@ -5613,6 +5613,40 @@ class GatewayRunner:
                 _phase_elapsed(),
             )
 
+            # Best-effort handoff for active agents before draining.
+            # Uses LLM summarization with extractive fallback — generate_handoff()
+            # handles the fallback internally if the auxiliary LLM is unavailable.
+            _handoff_count = 0
+            for _sk, _agent in list(self._running_agents.items()):
+                if _agent is _AGENT_PENDING_SENTINEL:
+                    continue
+                try:
+                    from agent.handoff import generate_handoff, write_gateway_active_handoff
+                    _ho_sid = getattr(_agent, "session_id", None) or _sk
+                    _ho_msgs = self.session_store.load_transcript(_ho_sid)
+                    _ho_path = generate_handoff(
+                        session_id=_ho_sid,
+                        messages=_ho_msgs,
+                        reason="gateway_shutdown",
+                        platform=getattr(_agent, "platform", None),
+                        model=getattr(_agent, "model", None),
+                        llm_summarize=True,
+                        gateway_name=getattr(self, "gateway_name", None),
+                    )
+                    write_gateway_active_handoff({
+                        "session_key": _sk,
+                        "session_id": _ho_sid,
+                        "handoff_path": str(_ho_path),
+                    })
+                    _handoff_count += 1
+                except Exception as _ho_err:
+                    logger.debug("Shutdown handoff failed for %s: %s", _sk, _ho_err)
+            if _handoff_count:
+                logger.info(
+                    "Shutdown phase: wrote %d handoff(s) at +%.2fs",
+                    _handoff_count, _phase_elapsed(),
+                )
+
             timeout = self._restart_drain_timeout
 
             # Pre-mark sessions as resume_pending BEFORE the drain wait.
