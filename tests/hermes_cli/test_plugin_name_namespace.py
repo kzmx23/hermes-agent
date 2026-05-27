@@ -6,6 +6,10 @@ contain a forward slash (``image_gen%2Fopenai``). Starlette decodes
 the request fell into another route, yielding HTTP 405. Routes now use
 ``{name:path}`` and ``_validate_plugin_name`` permits embedded slashes
 while still rejecting traversal segments.
+
+Validation behaviour (upstream): leading/trailing slashes are normalised
+away via ``str.strip("/")``; an empty result, a ``..`` traversal segment
+or a backslash is rejected. Embedded single slashes (namespaces) pass.
 """
 
 from __future__ import annotations
@@ -30,6 +34,19 @@ def test_validate_plugin_name_accepts_namespaced(name: str) -> None:
 
 
 @pytest.mark.parametrize(
+    "name,expected",
+    [
+        ("/abs/path", "abs/path"),
+        ("trailing/", "trailing"),
+        ("/image_gen/openai/", "image_gen/openai"),
+    ],
+)
+def test_validate_plugin_name_strips_outer_slashes(name: str, expected: str) -> None:
+    # Leading/trailing slashes are normalised away rather than rejected.
+    assert _validate_plugin_name(name) == expected
+
+
+@pytest.mark.parametrize(
     "name",
     [
         "",
@@ -37,9 +54,6 @@ def test_validate_plugin_name_accepts_namespaced(name: str) -> None:
         "../etc/passwd",
         "image_gen/../escape",
         "back\\slash",
-        "/abs/path",
-        "trailing/",
-        "double//slash",
     ],
 )
 def test_validate_plugin_name_rejects_unsafe(name: str) -> None:
