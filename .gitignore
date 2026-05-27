@@ -82,3 +82,6 @@ models-dev-upstream/
 hermes_cli/tui_dist/*
 hermes_cli/scripts/
 docs/superpowers/*
+
+# Local Telegram digest runtime config (contains private chat identifiers)
+scripts/telegram_digest/telegram_digest_config.yaml
