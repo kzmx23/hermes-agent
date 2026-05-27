@@ -1,0 +1,4 @@
+name: neuraldeep-stt
+version: 0.1.0
+description: NeuralDeep speech-to-text (OpenAI-compatible Whisper) — custom STT provider
+author: local (Maxim)

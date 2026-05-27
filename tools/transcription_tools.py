@@ -790,15 +790,6 @@ def _get_provider(stt_config: dict) -> str:
             )
             return "none"
 
-        if provider == "neuraldeep":
-            if _HAS_OPENAI and get_env_value("NEURALDEEP_API_KEY"):
-                return "neuraldeep"
-            logger.warning(
-                "STT provider 'neuraldeep' configured but openai package is missing "
-                "or NEURALDEEP_API_KEY is not set"
-            )
-            return "none"
-
         if provider == "mistral":
             # `mistralai` PyPI package was quarantined on 2026-05-12 after a
             # malicious 2.4.6 release. Refuse to use this provider until it's
@@ -1365,65 +1356,6 @@ def _transcribe_openai(file_path: str, model_name: str) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Provider: neuraldeep (OpenAI-compatible Whisper API)
-# ---------------------------------------------------------------------------
-
-
-def _transcribe_neuraldeep(file_path: str, model_name: str) -> Dict[str, Any]:
-    """Transcribe using NeuralDeep's OpenAI-compatible Whisper endpoint."""
-    api_key = get_env_value("NEURALDEEP_API_KEY")
-    if not api_key:
-        return {"success": False, "transcript": "", "error": "NEURALDEEP_API_KEY not set"}
-
-    if not _HAS_OPENAI:
-        return {"success": False, "transcript": "", "error": "openai package not installed"}
-
-    stt_config = _load_stt_config()
-    neuraldeep_cfg = stt_config.get("neuraldeep", {}) if isinstance(stt_config, dict) else {}
-    base_url = str(
-        neuraldeep_cfg.get("base_url")
-        or get_env_value("NEURALDEEP_STT_BASE_URL")
-        or NEURALDEEP_STT_BASE_URL
-    ).strip().rstrip("/")
-
-    from openai import OpenAI, APIError, APIConnectionError, APITimeoutError
-
-    try:
-        client = OpenAI(api_key=api_key, base_url=base_url, timeout=60, max_retries=1)
-        try:
-            with open(file_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    model=model_name,
-                    file=audio_file,
-                    response_format="text" if model_name == "whisper-1" else "json",
-                )
-
-            transcript_text = _extract_transcript_text(transcription)
-            logger.info(
-                "Transcribed %s via NeuralDeep API (%s, %d chars)",
-                Path(file_path).name,
-                model_name,
-                len(transcript_text),
-            )
-            return {"success": True, "transcript": transcript_text, "provider": "neuraldeep"}
-        finally:
-            close = getattr(client, "close", None)
-            if callable(close):
-                close()
-
-    except PermissionError:
-        return {"success": False, "transcript": "", "error": f"Permission denied: {file_path}"}
-    except APITimeoutError as e:
-        return {"success": False, "transcript": "", "error": f"Request timeout: {e}"}
-    except APIConnectionError as e:
-        return {"success": False, "transcript": "", "error": f"Connection error: {e}"}
-    except APIError as e:
-        return {"success": False, "transcript": "", "error": f"API error: {e}"}
-    except Exception as e:
-        logger.error("NeuralDeep transcription failed: %s", e, exc_info=True)
-        return {"success": False, "transcript": "", "error": f"NeuralDeep transcription failed: {e}"}
-
-# ---------------------------------------------------------------------------
 # Provider: mistral (Voxtral Transcribe API)
 # ---------------------------------------------------------------------------
 
@@ -1631,11 +1563,6 @@ def transcribe_audio(file_path: str, model: Optional[str] = None) -> Dict[str, A
         openai_cfg = stt_config.get("openai", {})
         model_name = model or openai_cfg.get("model", DEFAULT_STT_MODEL)
         return _transcribe_openai(file_path, model_name)
-
-    if provider == "neuraldeep":
-        neuraldeep_cfg = stt_config.get("neuraldeep", {})
-        model_name = model or neuraldeep_cfg.get("model", DEFAULT_NEURALDEEP_STT_MODEL)
-        return _transcribe_neuraldeep(file_path, model_name)
 
     if provider == "mistral":
         mistral_cfg = stt_config.get("mistral", {})
